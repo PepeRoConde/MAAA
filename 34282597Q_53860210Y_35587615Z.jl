@@ -599,7 +599,7 @@ function calculateMNISTAccuracies(
     threshold::Real
 )
     # Cargar el dataset MNIST
-    trainImages, trainLabels, testImages, testLabels = loadMNIST(datasetFolder, labels, Float32)
+    trainImages, trainLabels, testImages, testLabels = loadMNISTDataset(datasetFolder, labels, Float32)
 
     # Llamar a averageMNISTImages para obtener plantillas
     templateInputs, templateLabels = averageMNISTImages(trainImages, trainLabels)
