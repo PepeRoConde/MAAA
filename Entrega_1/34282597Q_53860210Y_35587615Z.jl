@@ -4,6 +4,7 @@
 # ------------------------------------- Ejercicio 1 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
+using FileIO, Images, JLD2, DelimitedFiles, Flux
 
 function fileNamesFolder(folderName::String, extension::String)
     # Convertir la extensión a mayúsculas
@@ -579,8 +580,7 @@ function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs
         label = templateLabels[i]  # Obtener la etiqueta correspondiente
 
         # Compara la plantilla con todas las imágenes a clasificar
-        indicesCoincidence = vec(all(imageArray .== template, dims=[3,4]))
-
+        indicesCoincidence = vec(all(imageArray .== template, dims=[2,3,4]))
         # Actualizar las posiciones correspondientes en el vector de salida
         outputs[indicesCoincidence] .= label
     end
@@ -589,39 +589,42 @@ function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs
 end
 
 
-function calculateMNISTAccuracies(
-    datasetFolder::String,
-    labels::AbstractArray{Int,1}, 
-    threshold::Real
-)
-    # Cargar el dataset MNIST
-    trainImages, trainLabels, testImages, testLabels = loadMNISTDataset(datasetFolder, labels, Float32)
+#datasetFolder::String; labels::AbstractArray{Int,1}=0:9, datasetType::DataType=Float32
 
-    # Llamar a averageMNISTImages para obtener plantillas
-    templateInputs, templateLabels = averageMNISTImages(trainImages, trainLabels)
+using Statistics
+
+
+function calculateMNISTAccuracies(datasetFolder::String, labels::AbstractArray{Int,1}, threshold::Real)
+
+    # Cargar el dataset MNIST
+    imagesTrain, labelsTrain, imagesTest, labelsTest = loadMNISTDataset(datasetFolder, labels=labels, datasetType=Float32)
+
+    # Calcular las imágenes promedio de entrenamiento
+    templateImages, templateLabels = averageMNISTImages(imagesTrain, labelsTrain)
 
     # Umbralizar las imágenes
-    trainImagesBool = trainImages .>= threshold
-    testImagesBool = testImages .>= threshold
-    templateInputsBool = templateInputs .>= threshold
+    imagesTrain = imagesTrain .>= threshold
+    imagesTest = imagesTest .>= threshold
+    templateImages = templateImages .>= threshold
 
     # Entrenar la red de Hopfield
-    hopfieldNet = trainHopfield(templateInputsBool)
+    hopfieldNet = trainHopfield(templateImages)
 
-    # Calcular precisión en el conjunto de entrenamiento
-    classifiedTrainImages = stepHopfield(hopfieldNet, trainImagesBool)
-    trainPredictions = classifyMNISTImages(classifiedTrainImages, templateInputsBool, templateLabels)
-    trainAccuracy = mean(trainPredictions .== trainLabels)
+    # Calcular la precisión en el conjunto de entrenamiento
+    predictedLabelsTrain = classifyMNISTImages(imagesTrain, templateImages, templateLabels)
+    accuracyTrain = mean(predictedLabelsTrain .== labelsTrain)
 
-    # Calcular precisión en el conjunto de test
-    classifiedTestImages = stepHopfield(hopfieldNet, testImagesBool)
-    testPredictions = classifyMNISTImages(classifiedTestImages, templateInputsBool, templateLabels)
-    testAccuracy = mean(testPredictions .== testLabels)
+    # Calcular la precisión en el conjunto de test
+    predictedLabelsTest = classifyMNISTImages(imagesTest, templateImages, templateLabels)
+    accuracyTest = mean(predictedLabelsTest .== labelsTest)
 
-    return trainAccuracy, testAccuracy
-end
+    return (accuracyTrain, accuracyTest)
 
-calculateMNISTAccuracies()
+end;
+
+#vamos a probar la función calculateMNISTAccuracies
+
+calculateMNISTAccuracies("datasets", 0:9, 1)
 
 
 # ----------------------------------------------------------------------------------------------
