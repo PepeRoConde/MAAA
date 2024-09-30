@@ -569,11 +569,7 @@ function averageMNISTImages(imageArray::AbstractArray{<:Real,4}, labelArray::Abs
 
 end;
 
-function classifyMNISTImages(
-    imageArray::AbstractArray{<:Bool,4}, 
-    templateInputs::AbstractArray{<:Bool,4}, 
-    templateLabels::AbstractArray{Int,1}
-)
+function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs::AbstractArray{<:Real,4}, templateLabels::AbstractArray{Int,1})
     # Crear vector de salida inicializado a -1
     outputs = fill(-1, size(imageArray, 1))
 
@@ -594,7 +590,7 @@ end
 
 
 function calculateMNISTAccuracies(
-    datasetFolder::String, 
+    datasetFolder::String,
     labels::AbstractArray{Int,1}, 
     threshold::Real
 )
@@ -624,6 +620,8 @@ function calculateMNISTAccuracies(
 
     return trainAccuracy, testAccuracy
 end
+
+calculateMNISTAccuracies()
 
 
 # ----------------------------------------------------------------------------------------------
