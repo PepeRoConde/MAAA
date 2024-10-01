@@ -4,7 +4,6 @@
 # ------------------------------------- Ejercicio 1 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
-using FileIO, Images, JLD2, DelimitedFiles, Flux
 
 function fileNamesFolder(folderName::String, extension::String)
     # Convertir la extensión a mayúsculas
@@ -268,91 +267,77 @@ end;
 
 using Flux
 
-function trainClassANN!(ann::Chain,
-    trainingDataset::Tuple{AbstractArray{<:Real,2}, AbstractArray{Bool,2}},
-    trainOnly2LastLayers::Bool;
-    maxEpochs::Int = 1000,
-    minLoss::Real = 0.0,
-    learningRate::Real = 0.001,
-    minLossChange::Real = 1e-7,
-    lossChangeWindowSize::Int = 5)
+function trainClassANN!(ann::Chain, trainingDataset::Tuple{AbstractArray{<:Real, 2}, AbstractArray{Bool, 2}}, trainOnly2LastLayers::Bool;
+    maxEpochs::Int = 1000, minLoss::Real = 0.0, learningRate::Real = 0.001, minLossChange::Real = 1e-7, lossChangeWindowSize::Int = 5)
+    
+    inputs, targets = trainingDataset
 
-    # Desempaquetar el conjunto de datos
-    X, Y = trainingDataset
-
-    # Definir la función de pérdida (Cross-Entropy para clasificación binaria)
-    loss_fn = Flux.Losses.binarycrossentropy
-
-    # Calcular la pérdida inicial antes del entrenamiento (ciclo 0)
-    initial_pred = ann(X)
-    initial_loss = loss_fn(initial_pred, Y)
-    #println(initial_loss)
-    trainingLosses = Float32[initial_loss]
-
-    # Seleccionar los parámetros a entrenar
-    if trainOnly2LastLayers
-        # Obtener los índices de las capas en la RNA
-        total_layers = length(ann.layers)
-        if total_layers < 2
-            error("La RNA debe tener al menos dos capas para entrenar las dos últimas.")
-        end
-
-    # Obtener las dos últimas capas
-    last_two_layers = ann.layers[end-1:end]
-
-    # Extraer los parámetros de las dos últimas capas
-    params_to_train = Flux.params(last_two_layers...)
-    else
-    # Entrenar todos los parámetros
-    params_to_train = Flux.params(ann)
+    # Convertir entradas a Float32 si es necesario
+    if eltype(inputs) <: Float64
+        inputs = Float32.(inputs)
     end
 
-    # Configurar el optimizador con los parámetros seleccionados
-    opt = Adam(learningRate)
+    # Inicializar optimizador Adam
+    opt_state = Flux.setup(Adam(learningRate), ann)
+
+    # Definir la función de pérdida
+    loss(x, y) = (size(y, 1) == 1) ? Flux.binarycrossentropy(ann(x), y) : Flux.crossentropy(ann(x), y)
+
+    # Almacenar valores de pérdida a lo largo del entrenamiento
+    loss_history = Float64[]
+
+    # Calcular la pérdida inicial
+    current_loss = loss(inputs, targets)
+    push!(loss_history, current_loss)
+    println("Epoch 0: loss = ", current_loss)
+
+    # Si se desea entrenar solo las dos últimas capas, congelar las capas anteriores
+    if trainOnly2LastLayers
+        for layer in 1:(length(ann) - 2)
+            # Manejar capas compuestas
+            if typeof(ann[layer]) <: Flux.Chain
+                for sublayer in ann[layer]
+                    Flux.freeze!(sublayer)
+                end
+            else
+                Flux.freeze!(ann[layer])
+            end
+        end
+    end
 
     # Bucle de entrenamiento
-    for epoch in 1:maxEpochs 
-        # Calcular el gradiente
-        gs = gradient(params_to_train) do
-        preds = ann(X)
-        loss_fn(preds, Y)
-    end
+    for epoch in 1:maxEpochs
+        # Realizar un ciclo de entrenamiento
+        gs = Flux.gradient(() -> loss(inputs, targets), Flux.params(ann))
+        Flux.update!(opt_state, ann, gs)
 
-    # Actualizar los parámetros
-    Flux.Optimise.update!(opt, params_to_train, gs)
+        # Calcular la nueva pérdida
+        current_loss = loss(inputs, targets)
+        push!(loss_history, current_loss)
 
-    # Calcular la pérdida actual
-    current_pred = ann(X)
-    current_loss = loss_fn(current_pred, Y)
-    push!(trainingLosses, Float32(current_loss))
+        # Imprimir la pérdida actual
+        println("Epoch $epoch: loss = ", current_loss)
 
-    # Verificar si la pérdida es menor o igual al mínimo especificado
-    if current_loss <= minLoss
-        println("Entrenamiento detenido en epoch $epoch: loss <= minLoss ($current_loss <= $minLoss)")
-        break
-    end
-
-    # Verificar el cambio en la pérdida si se ha alcanzado el tamaño de ventana
-    if epoch > lossChangeWindowSize
-        lossWindow = trainingLosses[end-lossChangeWindowSize+1:end]
-        minLossValue, maxLossValue = extrema(lossWindow)
-        loss_ratio = (maxLossValue - minLossValue) / minLossValue
-
-        if loss_ratio <= minLossChange
-            println("Entrenamiento detenido en epoch $epoch: cambio de loss <= minLossChange ($loss_ratio <= $minLossChange)")
+        # Verificar el criterio de parada por pérdida mínima
+        if current_loss <= minLoss
+            println("Criterio de parada alcanzado: minLoss alcanzado en el ciclo $epoch.")
             break
+        end
+
+        # Verificar el criterio de parada por cambio en la pérdida
+        if length(loss_history) > lossChangeWindowSize
+            lossWindow = loss_history[end - lossChangeWindowSize + 1:end]
+            minLossValue, maxLossValue = extrema(lossWindow)
+            if ((maxLossValue - minLossValue) / minLossValue <= minLossChange)
+                println("Criterio de parada alcanzado: cambio en la pérdida menor al mínimo cambio permitido en el ciclo $epoch.")
+                break
+            end
         end
     end
 
-    println(epoch)
-
+    # Devolver el vector de pérdidas durante el entrenamiento
+    return loss_history
 end
-
-
-
-return trainingLosses
-end
-
 
 
 function trainClassCascadeANN(maxNumNeurons::Int,
@@ -373,36 +358,30 @@ function trainClassCascadeANN(maxNumNeurons::Int,
 
     new=newClassCascadeNetwork(length(inputs), length(outputs))
 
-    # Unimos inputs y outputs para crear un training dataset traspuesto
-
-    trainingDatasetT = (inputs, outputs)
-
     #Entrenamos la red neuronal previa que hemos creado
 
-    loss=trainClassANN!(new, trainingDatasetT, false) #devuelve un vector
+    loss=trainClassANN!(new, trainingDataset, trainOnly2LastLayers=false) #devuelve un vector
 
     #Ahora, con un bucle, vamos a entrenar la red neuronal con una nueva capa en cada iteración
 
     for i in 1:maxNumNeurons
 
-        new = addClassCascadeNeuron(new; transferFunction=σ) #añadimos una nueva capa a la neurona
+        new=addClassCascadeNeuron(new, transferFunction) #añadimos una nueva capa a la neurona
 
-        if indexOutputLayer(new) > 1 #si la red neuronal tiene más de una neurona, entrenamos la red neuronal congelando todas las capas excepto las dos últimas
+        if new.numOutputs > 1 #si la red neuronal tiene más de una neurona, entrenamos la red neuronal congelando todas las capas excepto las dos últimas
         #esto está bien????
         
-            loss=vcat(loss, trainClassANN!(new, trainingDatasetT, true)[2]) #obviamos el primer valor del vector de loss
+            loss=vcat(loss, trainClassANN!(new, trainingDataset, trainOnly2LastLayers=true)[2]) #obviamos el primer valor del vector de loss
 
         end
 
-        loss=vcat(loss, trainClassANN!(new, trainingDatasetT, false)[2])
+        loss=vcat(loss, trainClassANN!(new, trainingDataset, trainOnly2LastLayers=false)[2])
 
     end
 
     return (new, loss)
 
 end;
-
-trainClassCascadeANN(3, ([1.0 2.0 3.0 4.0 5.0], [true false true false true]))
 
 function trainClassCascadeANN(maxNumNeurons::Int,
     trainingDataset::  Tuple{AbstractArray{<:Real,2}, AbstractArray{Bool,1}};
@@ -590,7 +569,11 @@ function averageMNISTImages(imageArray::AbstractArray{<:Real,4}, labelArray::Abs
 
 end;
 
-function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs::AbstractArray{<:Real,4}, templateLabels::AbstractArray{Int,1})
+function classifyMNISTImages(
+    imageArray::AbstractArray{<:Bool,4}, 
+    templateInputs::AbstractArray{<:Bool,4}, 
+    templateLabels::AbstractArray{Int,1}
+)
     # Crear vector de salida inicializado a -1
     outputs = fill(-1, size(imageArray, 1))
 
@@ -600,7 +583,8 @@ function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs
         label = templateLabels[i]  # Obtener la etiqueta correspondiente
 
         # Compara la plantilla con todas las imágenes a clasificar
-        indicesCoincidence = vec(all(imageArray .== template, dims=[2,3,4]))
+        indicesCoincidence = vec(all(imageArray .== template, dims=[3,4]))
+
         # Actualizar las posiciones correspondientes en el vector de salida
         outputs[indicesCoincidence] .= label
     end
@@ -609,42 +593,37 @@ function classifyMNISTImages(imageArray::AbstractArray{<:Real,4}, templateInputs
 end
 
 
-#datasetFolder::String; labels::AbstractArray{Int,1}=0:9, datasetType::DataType=Float32
-
-using Statistics
-
-
-function calculateMNISTAccuracies(datasetFolder::String, labels::AbstractArray{Int,1}, threshold::Real)
-
+function calculateMNISTAccuracies(
+    datasetFolder::String, 
+    labels::AbstractArray{Int,1}, 
+    threshold::Real
+)
     # Cargar el dataset MNIST
-    imagesTrain, labelsTrain, imagesTest, labelsTest = loadMNISTDataset(datasetFolder, labels=labels, datasetType=Float32)
+    trainImages, trainLabels, testImages, testLabels = loadMNIST(datasetFolder, labels, Float32)
 
-    # Calcular las imágenes promedio de entrenamiento
-    templateImages, templateLabels = averageMNISTImages(imagesTrain, labelsTrain)
+    # Llamar a averageMNISTImages para obtener plantillas
+    templateInputs, templateLabels = averageMNISTImages(trainImages, trainLabels)
 
     # Umbralizar las imágenes
-    imagesTrain = imagesTrain .>= threshold
-    imagesTest = imagesTest .>= threshold
-    templateImages = templateImages .>= threshold
+    trainImagesBool = trainImages .>= threshold
+    testImagesBool = testImages .>= threshold
+    templateInputsBool = templateInputs .>= threshold
 
     # Entrenar la red de Hopfield
-    hopfieldNet = trainHopfield(templateImages)
+    hopfieldNet = trainHopfield(templateInputsBool)
 
-    # Calcular la precisión en el conjunto de entrenamiento
-    predictedLabelsTrain = classifyMNISTImages(imagesTrain, templateImages, templateLabels)
-    accuracyTrain = mean(predictedLabelsTrain .== labelsTrain)
+    # Calcular precisión en el conjunto de entrenamiento
+    classifiedTrainImages = stepHopfield(hopfieldNet, trainImagesBool)
+    trainPredictions = classifyMNISTImages(classifiedTrainImages, templateInputsBool, templateLabels)
+    trainAccuracy = mean(trainPredictions .== trainLabels)
 
-    # Calcular la precisión en el conjunto de test
-    predictedLabelsTest = classifyMNISTImages(imagesTest, templateImages, templateLabels)
-    accuracyTest = mean(predictedLabelsTest .== labelsTest)
+    # Calcular precisión en el conjunto de test
+    classifiedTestImages = stepHopfield(hopfieldNet, testImagesBool)
+    testPredictions = classifyMNISTImages(classifiedTestImages, templateInputsBool, templateLabels)
+    testAccuracy = mean(testPredictions .== testLabels)
 
-    return (accuracyTrain, accuracyTest)
-
-end;
-
-#vamos a probar la función calculateMNISTAccuracies
-
-calculateMNISTAccuracies("datasets", 0:9, 1)
+    return trainAccuracy, testAccuracy
+end
 
 
 # ----------------------------------------------------------------------------------------------
@@ -657,42 +636,38 @@ calculateMNISTAccuracies("datasets", 0:9, 1)
 
 Batch = Tuple{AbstractArray{<:Real,2}, AbstractArray{<:Any,1}}
 
+lote_entero_lepiota = Tuple(loadDataset("agaricus-lepiota", "/Users/pepe/Library/CloudStorage/OneDrive-UniversidadedaCoruña/carrera/3/1/MAAA/datasets"))
+hector_batch = Batch(lote_entero_lepiota)
 
 function batchInputs(batch::Batch)
-    #
-    # Codigo a desarrollar
-    #
+    return batch[1] # el primer elemento de la tupla
 end;
 
 function batchTargets(batch::Batch)
-    #
-    # Codigo a desarrollar
-    #
+    return batch[2] # el segundo
 end;
 
 function batchLength(batch::Batch)
-    #
-    # Codigo a desarrollar
-    #
+    tamanoEntradas = size(batchInputs(batch))[1]
+    if  tamanoEntradas == size(batchTargets(batch))[1]
+        return tamanoEntradas
+    else 
+        print("No miden lo mismo las entradas que las salidas, ojo con eso")
+        return tamanoEntradas
+    end
 end;
 
 function selectInstances(batch::Batch, indices::Any)
-    #
-    # Codigo a desarrollar
-    #
+    return Batch(Tuple((batchInputs(batch)[indices,:],vec(batchTargets(batch)[indices,:]))))
 end;
 
 function joinBatches(batch1::Batch, batch2::Batch)
-    #
-    # Codigo a desarrollar
-    #
+   return Batch(Tuple((vcat(batchInputs(batch1),batchInputs(batch2)),vcat(batchTargets(batch1),batchTargets(batch2)))))
 end;
 
 
 function divideBatches(dataset::Batch, batchSize::Int; shuffleRows::Bool=false)
-    #
-    # Codigo a desarrollar
-    #
+    
 end;
 
 function trainSVM(dataset::Batch, kernel::String, C::Real;
