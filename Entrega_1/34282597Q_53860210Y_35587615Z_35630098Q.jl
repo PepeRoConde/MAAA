@@ -407,7 +407,7 @@ function trainClassCascadeANN(maxNumNeurons::Int,
     return (ann, allTrainingLosses)
 end
 
-trainClassCascadeANN(10, (rand(10, 100), rand(1, 100) .> 0.5))
+# trainClassCascadeANN(5, (rand(100, 10), rand(Bool, 100, 2)))
 
 function trainClassCascadeANN(maxNumNeurons::Int,
     trainingDataset::  Tuple{AbstractArray{<:Real,2}, AbstractArray{Bool,1}};
