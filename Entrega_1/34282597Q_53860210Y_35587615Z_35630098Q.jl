@@ -4,6 +4,7 @@
 # ------------------------------------- Ejercicio 1 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
+using FileIO, Images, JLD2, DelimitedFiles, Flux
 
 function fileNamesFolder(folderName::String, extension::String)
     # Convertir la extensión a mayúsculas
@@ -17,8 +18,6 @@ function fileNamesFolder(folderName::String, extension::String)
     
     return fileNamesWithoutExt
 end;
-
-
 
 using DelimitedFiles
 
@@ -350,10 +349,10 @@ function trainClassANN!(ann::Chain,
 
     end
 
-    
-
     return trainingLosses
 end
+
+
 
 
 function trainClassCascadeANN(maxNumNeurons::Int,
@@ -387,20 +386,20 @@ function trainClassCascadeANN(maxNumNeurons::Int,
         ann = addClassCascadeNeuron(ann; transferFunction=transferFunction)
 
         # Si el número de capas/neuronas de esta RNA es mayor que 1, es momento de entrenar la RNA congelando todas las capas excepto las dos últimas
-        if indexOutputLayer(ann) > 1
+        if i > 1
 
             # Entrenamos la RNA congelando todas las capas excepto las dos últimas
             trainingLosses = trainClassANN!(ann, (X, Y), true, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
 
             # Concatenamos las pérdidas sin omitir el primer valor
-            allTrainingLosses = vcat(allTrainingLosses, trainingLosses)
+            allTrainingLosses = vcat(allTrainingLosses, trainingLosses[2:end])
         end
 
         # Entrenamos toda la RNA
         trainingLosses = trainClassANN!(ann, (X, Y), false, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
 
         # Concatenamos las pérdidas sin omitir el primer valor
-        allTrainingLosses = vcat(allTrainingLosses, trainingLosses)
+        allTrainingLosses = vcat(allTrainingLosses, trainingLosses[2:end])
 
     end
 
