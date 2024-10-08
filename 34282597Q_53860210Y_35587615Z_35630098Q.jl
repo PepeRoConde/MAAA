@@ -836,12 +836,12 @@ batchSize = 50
 kernel = "rbf"
 C = 1.0
 
-streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
+# streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
 
 function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
-    #
-    # Codigo a desarrollar
-    #
+
+    return sqrt.(sum((memory.inputs .- instance').^2, dims=2))
+    
 end;
 
 function predictKNN(memory::Batch, instance::AbstractArray{<:Real,1}, k::Int)
