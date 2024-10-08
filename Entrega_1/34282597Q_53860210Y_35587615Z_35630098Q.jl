@@ -713,22 +713,68 @@ end;
 
 
 function initializeStreamLearningData(datasetFolder::String, windowSize::Int, batchSize::Int)
-    #
-    # Codigo a desarrollar
-    #
+    
+    load = loadStreamLearningDataset(datasetFolder)
+
+    memoria = selectInstances(load,1:windowSize)
+
+    resto = selectInstances(load,windowsSize+1:lenght(load))
+
+    batches=divideBatches(resto,batchSize,shuffleRows=false)
+
+    return (memoria,batches)
 end;
 
+# ## Ejemplo de cómo llamar a la función
+# datasetFolder = "datasets"
+# windowSize = 100  # Tamaño de la ventana inicial
+# batchSize = 50    # Tamaño de los batches
+
+# (memory,batches) = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
+# println((memory,batches))
+
 function addBatch!(memory::Batch, newBatch::Batch)
-    #
-    # Codigo a desarrollar
-    #
+    # Número de instancias en el nuevo lote
+    n = size(newBatch.inputs, 1)
+
+    #print(n)
+    
+    # Desplazar datos en la memoria
+    memory.inputs = vcat(memory.inputs[n+1:end, :], newBatch.inputs)
+    memory.outputs = vcat(memory.outputs[n+1:end], newBatch.outputs)
+    
+    return memory
 end;
 
 function streamLearning_SVM(datasetFolder::String, windowSize::Int, batchSize::Int, kernel::String, C::Real;
     degree::Real=1, gamma::Real=2, coef0::Real=0.)
-    #
-    # Codigo a desarrollar
-    #
+    
+    #Inicializar memoria y batches mediante la función initializeStreamLearningData
+    memoria, batches = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
+
+    #Entrenar el primer SVM mediante la función trainSVM de a práctica anterior
+    svm = trainSVM(memoria, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+
+    #Crear un vector con tantos elementos como lotes de datos, para almacenar las precisiones
+    vector_precisiones = Vector{Any}(undef, length(batches))
+
+    #Desarollar un bucle, con tantos ciclos como batches.
+
+    for i in 1:length(batches)
+
+        #Hacer test del modelo actual (función predict de Scikit-Learn) con el i-ésimo batch, calcular la precisión y almacenarla en el vector
+        vector_precisiones[i] = predict(svm, batches[i])
+
+        #Actualizar la memoria con el i-ésimo batch mediante la función addBatch!
+        addBatch!(memoria, batches[i]) 
+
+        #Entrenar un nuevo SVM con la memoria actualizada que se tiene. Este será el nuevo modelo
+        svm = trainSVM(memoria, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+
+    end
+    
+    return vector_precisiones
+
 end;
 
 function streamLearning_ISVM(datasetFolder::String, windowSize::Int, batchSize::Int, kernel::String, C::Real;
