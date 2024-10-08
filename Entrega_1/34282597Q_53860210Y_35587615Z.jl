@@ -4,6 +4,7 @@
 # ------------------------------------- Ejercicio 1 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
+using FileIO, Images, JLD2, DelimitedFiles, Flux
 
 function fileNamesFolder(folderName::String, extension::String)
     # Convertir la extensión a mayúsculas
@@ -360,7 +361,7 @@ function trainClassCascadeANN(maxNumNeurons::Int,
 
     #Entrenamos la red neuronal previa que hemos creado
 
-    loss=trainClassANN!(new, trainingDataset, trainOnly2LastLayers=false) #devuelve un vector
+    loss=trainClassANN!(new, trainingDataset, false) #devuelve un vector
 
     #Ahora, con un bucle, vamos a entrenar la red neuronal con una nueva capa en cada iteración
 
@@ -382,6 +383,10 @@ function trainClassCascadeANN(maxNumNeurons::Int,
     return (new, loss)
 
 end;
+
+
+trainClassCascadeANN(5, (rand(10, 100), rand(1, 100) .> 0.5))
+
 
 function trainClassCascadeANN(maxNumNeurons::Int,
     trainingDataset::  Tuple{AbstractArray{<:Real,2}, AbstractArray{Bool,1}};
@@ -657,11 +662,6 @@ function batchLength(batch::Batch)
     end
 end;
 
-function batchAnchura(batch::Batch)
-    tamanoEntradas = size(batchInputs(batch))[2]
-    return tamanoEntradas
-end;
-
 function selectInstances(batch::Batch, indices::Any)
     return Batch(Tuple((batchInputs(batch)[indices,:],vec(batchTargets(batch)[indices,:]))))
 end;
@@ -672,14 +672,7 @@ end;
 
 
 function divideBatches(dataset::Batch, batchSize::Int; shuffleRows::Bool=false)
-    anchura = batchAnchura(dataset)
-    if shuffleRows
-        indices_desordenados = shuffle!(Vector(1:batchLength(dataset)))
-        dataset = selectInstances(dataset, indices_desordenados)
-    end
-    entradas = Base.PartitionIterator(batchInputs(dataset),batchSize)
-    salidas = Base.PartitionIterator(batchTargets(dataset) ,batchSize)
-    return [Batch(Tuple((reshape(entrada,batchSize,1),vcat(salida)))) for entrada in entradas, salida in salidas]
+    
 end;
 
 function trainSVM(dataset::Batch, kernel::String, C::Real;
