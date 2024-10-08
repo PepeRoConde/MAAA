@@ -670,6 +670,14 @@ end;
 
 function divideBatches(dataset::Batch, batchSize::Int; shuffleRows::Bool=false)
     
+    anchura = batchAnchura(dataset)
+    if shuffleRows
+        indices_desordenados = shuffle!(Vector(1:batchLength(dataset)))
+        dataset = selectInstances(dataset, indices_desordenados)
+    end
+    entradas = Base.PartitionIterator(batchInputs(dataset),batchSize)
+    salidas = Base.PartitionIterator(batchTargets(dataset) ,batchSize)
+    return [Batch(Tuple((reshape(entrada,batchSize,1),vcat(salida)))) for entrada in entradas, salida in salidas]
 end;
 
 function trainSVM(dataset::Batch, kernel::String, C::Real;
@@ -845,15 +853,17 @@ function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
 end;
 
 function predictKNN(memory::Batch, instance::AbstractArray{<:Real,1}, k::Int)
-    #
-    # Codigo a desarrollar
-    #
+
+    distances = euclideanDistances(memory, instance)
+
+    min_index = partialsortperm(distances, 1:k)
+
+    return mode(memory.outputs[min_index])
+
 end;
 
 function predictKNN(memory::Batch, instances::AbstractArray{<:Real,2}, k::Int)
-    #
-    # Codigo a desarrollar
-    #
+    return [predictKNN(memory, instance, k) for instance in eachrow(instances)]
 end;
 
 function streamLearning_KNN(datasetFolder::String, windowSize::Int, batchSize::Int, k::Int)
