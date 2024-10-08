@@ -371,13 +371,7 @@ function trainClassCascadeANN(maxNumNeurons::Int,
     ann = newClassCascadeNetwork(size(X, 1), size(Y, 1))
 
     # Entrenamos la RNA
-    trainingLosses = trainClassANN!(ann, (X, Y), false, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
-
-    # Vector de valores de loss de tipo Float32
-    allTrainingLosses = Float32[]
-
-    # Concatenamos todas las pérdidas iniciales
-    allTrainingLosses = vcat(allTrainingLosses, trainingLosses)
+    allTrainingLosses = trainClassANN!(ann, (X, Y), false, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
 
     # Bucle con tantas iteraciones como maxNumNeurons
     for i in 1:maxNumNeurons
@@ -391,14 +385,14 @@ function trainClassCascadeANN(maxNumNeurons::Int,
             # Entrenamos la RNA congelando todas las capas excepto las dos últimas
             trainingLosses = trainClassANN!(ann, (X, Y), true, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
 
-            # Concatenamos las pérdidas sin omitir el primer valor
+            # Concatenamos las pérdidas
             allTrainingLosses = vcat(allTrainingLosses, trainingLosses[2:end])
         end
 
         # Entrenamos toda la RNA
         trainingLosses = trainClassANN!(ann, (X, Y), false, maxEpochs=maxEpochs, minLoss=minLoss, learningRate=learningRate, minLossChange=minLossChange, lossChangeWindowSize=lossChangeWindowSize)
 
-        # Concatenamos las pérdidas sin omitir el primer valor
+        # Concatenamos las pérdidas
         allTrainingLosses = vcat(allTrainingLosses, trainingLosses[2:end])
 
     end
@@ -406,7 +400,7 @@ function trainClassCascadeANN(maxNumNeurons::Int,
     return (ann, allTrainingLosses)
 end
 
-# trainClassCascadeANN(5, (rand(100, 10), rand(Bool, 100, 2)))
+# trainClassCascadeANN(1, (rand(2, 368), rand(1, 368) .> 0.5))
 
 function trainClassCascadeANN(maxNumNeurons::Int,
     trainingDataset::  Tuple{AbstractArray{<:Real,2}, AbstractArray{Bool,1}};
@@ -415,7 +409,7 @@ function trainClassCascadeANN(maxNumNeurons::Int,
     
     #Convertimos el vector de salidas en una matriz
 
-    outputs = reshape(trainingDataset[2], 1, length(trainingDataset[2])) #reshape convierte el vector en una matriz de 1 fila y tantas columnas como elementos tenga el vector
+    outputs = reshape(trainingDataset[2], length(trainingDataset[2]), 1) #reshape convierte el vector en una matriz de 1 fila y tantas columnas como elementos tenga el vector
 
     #Llamamos a la función anterior con los mismos parámetros
 
