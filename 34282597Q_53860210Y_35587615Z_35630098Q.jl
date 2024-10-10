@@ -6,6 +6,7 @@
 
 using FileIO, Images, JLD2, DelimitedFiles, Flux
 
+
 function fileNamesFolder(folderName::String, extension::String)
     # Convertir la extensión a mayúsculas
     extension = uppercase(extension)
@@ -633,13 +634,26 @@ end
 # ----------------------------------------------------------------------------------------------
 
 
-# using ScikitLearn: @sk_import, fit!, predict
-# @sk_import svm: SVC
+#using ScikitLearn: @sk_import, fit!, predict
+
+# #tenemos que usar SVC
+
+# using Conda
+
+# # Actualizamos Conda
+# Conda.update()
+
+# # Instalamos scikit-learn manualmente en el entorno de Conda
+# Conda.add("scikit-learn")
+
+# import ScikitLearn.svm as svm
+#@sk_import svm: SVC
+
 
 Batch = Tuple{AbstractArray{<:Real,2}, AbstractArray{<:Any,1}}
 
-#lote_entero_lepiota = Tuple(loadDataset("agaricus-lepiota", "/Users/pepe/Library/CloudStorage/OneDrive-UniversidadedaCoruña/carrera/3/1/MAAA/datasets"))
-#hector_batch = Batch(lote_entero_lepiota)
+# lote_entero_lepiota = Tuple(loadDataset("agaricus-lepiota", "datasets"))
+# hector_batch = Batch(lote_entero_lepiota)
 
 function batchInputs(batch::Batch)
     return batch[1] # el primer elemento de la tupla
@@ -659,40 +673,88 @@ function batchLength(batch::Batch)
     end
 end;
 
+
 function selectInstances(batch::Batch, indices::Any)
-    return Batch(Tuple((batchInputs(batch)[indices,:],vec(batchTargets(batch)[indices,:]))))
+    return (batchInputs(batch)[indices,:], vec(batchTargets(batch)[indices,:]))
 end;
+
+#vamos a probar la función
+
+#indices = [1,2,3,4,5,6,7,8,9,10]
+#selectInstances(hector_batch, indices)
 
 function joinBatches(batch1::Batch, batch2::Batch)
-   return Batch(Tuple((vcat(batchInputs(batch1),batchInputs(batch2)),vcat(batchTargets(batch1),batchTargets(batch2)))))
+return (vcat(batchInputs(batch1), batchInputs(batch2)), vcat(batchTargets(batch1), batchTargets(batch2)))
 end;
 
+
+using Random, Base.Iterators, Statistics
 
 function divideBatches(dataset::Batch, batchSize::Int; shuffleRows::Bool=false)
-    
-    anchura = batchAnchura(dataset)
+
     if shuffleRows
-        indices_desordenados = shuffle!(Vector(1:batchLength(dataset)))
-        dataset = selectInstances(dataset, indices_desordenados)
+        indices = shuffle(1:batchLength(dataset))
+    else
+        indices = 1:batchLength(dataset)
     end
-    entradas = Base.PartitionIterator(batchInputs(dataset),batchSize)
-    salidas = Base.PartitionIterator(batchTargets(dataset) ,batchSize)
-    return [Batch(Tuple((reshape(entrada,batchSize,1),vcat(salida)))) for entrada in entradas, salida in salidas]
+
+    return [selectInstances(dataset, i) for i in partition(indices, batchSize)]
+    
+    
 end;
+
+#divideBatches(hector_batch, 10, shuffleRows=true)
+
 
 function trainSVM(dataset::Batch, kernel::String, C::Real;
     degree::Real=1, gamma::Real=2, coef0::Real=0.,
     supportVectors::Batch=( Array{eltype(dataset[1]),2}(undef,0,size(dataset[1],2)) , Array{eltype(dataset[2]),1}(undef,0) ) )
-    #
-    # Codigo a desarrollar
-    #
+
+    # Concatenate support vectors with the training dataset
+    trainingData = joinBatches(supportVectors, dataset)
+
+    # Create the SVM model
+    model = SVC(kernel=kernel, C=C, gamma=gamma, coef0=coef0, degree=degree, random_state=1)
+
+    # Train the model
+    fit!(model, batchInputs(trainingData), batchTargets(trainingData))
+
+    # Get the indices of the new support vectors
+    indicesNewSupportVectors = sort(model.support_ .+ 1)
+
+    # Number of support vectors from the previous training
+    numSupportVectors = batchLength(supportVectors)
+
+    # Separate indices into those from the previous support vectors and the new training data
+    indicesOldSupportVectors = indicesNewSupportVectors[indicesNewSupportVectors .<= numSupportVectors]
+    indicesNewTrainingData = indicesNewSupportVectors[indicesNewSupportVectors .> numSupportVectors] .- numSupportVectors
+
+    # Create the new batch of support vectors
+    newSupportVectors = joinBatches(
+        selectInstances(supportVectors, indicesOldSupportVectors),
+        selectInstances(dataset, indicesNewTrainingData)
+    )
+
+    return model, newSupportVectors, (indicesOldSupportVectors, indicesNewTrainingData)
 end;
+
 
 function trainSVM(batches::AbstractArray{<:Batch,1}, kernel::String, C::Real;
     degree::Real=1, gamma::Real=2, coef0::Real=0.)
-    #
-    # Codigo a desarrollar
-    #
+
+    # Definir un batch de vectores de soporte vacío
+    supportVectors = Batch((Array{Float64, 2}(undef, 0, size(batches[1][1], 2)), Array{Float64, 1}(undef, 0)))
+
+    # Variable para almacenar el modelo entrenado
+    model = nothing
+
+    # Iterar por todos los lotes de datos
+    for batch in batches
+        model, supportVectors, _ = trainSVM(batch, kernel, C, degree=degree, gamma=gamma, coef0=coef0, supportVectors=supportVectors)
+    end
+
+    # Devolver el último modelo entrenado
+    return model
 end;
 
 
@@ -703,181 +765,238 @@ end;
 # ------------------------------------- Ejercicio 5 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
+
+
 function initializeStreamLearningData(datasetFolder::String, windowSize::Int, batchSize::Int)
     
-    load = loadStreamLearningDataset(datasetFolder)
+    load = loadStreamLearningDataset(datasetFolder) 
 
     memoria = selectInstances(load,1:windowSize)
 
-    resto = selectInstances(load,windowSize+1:length(load))
+    resto = selectInstances(load,windowSize+1:batchLength(load))
 
     batches = divideBatches(resto, batchSize, shuffleRows=false)
-
 
     return (memoria,batches)
 end;
 
-# ## Ejemplo de cómo llamar a la función
-#datasetFolder = "datasets"
-#windowSize = 100  # Tamaño de la ventana inicial
-#batchSize = 50    # Tamaño de los batches
 
-(memory,batches) = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
-#println((memory,batches))
+
+
+# ## Ejemplo de cómo llamar a la función
+# datasetFolder = "datasets"
+# windowSize = 100  # Tamaño de la ventana inicial
+# batchSize = 50    # Tamaño de los batches
+
+#(memory,batches) = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
 
 function addBatch!(memory::Batch, newBatch::Batch)
-    # Número de instancias en el nuevo lote
-    n = size(newBatch.inputs, 1)
-
-    #print(n)
-    
-    # Desplazar datos en la memoria
-    memory.inputs = vcat(memory.inputs[n+1:end, :], newBatch.inputs)
-    memory.outputs = vcat(memory.outputs[n+1:end], newBatch.outputs)
-    
-    return memory
-end;
-
+        
+        # Desplazar los datos en la memoria
+        memoryInputs = vcat(batchInputs(memory)[size(newBatch[1], 1) + 1:end, :], batchInputs(newBatch))
+        memoryTargets = vcat(batchTargets(memory)[size(newBatch[2], 1) + 1:end], batchTargets(newBatch))
+        
+        # Actualizar la memoria
+        memory[1] .= memoryInputs
+        memory[2] .= memoryTargets
+        
+        return memory
+    end;
 #print(addBatch!(memory, batches))
+
+# import Pkg; Pkg.add("ScikitLearn")
+using ScikitLearn: predict
+using ScikitLearn: fit!
 
 function streamLearning_SVM(datasetFolder::String, windowSize::Int, batchSize::Int, kernel::String, C::Real;
     degree::Real=1, gamma::Real=2, coef0::Real=0.)
-    
-    #Inicializar memoria y batches mediante la función initializeStreamLearningData
-    memoria, batches = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
 
-    println(batches)
+    # Inicializar memoria y batches usando initializeStreamLearningData
+    memory, batches = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
 
-    #Entrenar el primer SVM mediante la función trainSVM de a práctica anterior
-    svm = trainSVM(memoria, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+    # Entrenar el primer SVM con la memoria inicial
+    svm, supportVectors, _ = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
 
-    # Crear un vector con tantos elementos como lotes de datos, para almacenar las precisiones
-    vector_precisiones = Vector{Any}(undef, length(batches))
-    #Desarollar un bucle, con tantos ciclos como batches.
+    # Crear un vector para almacenar las precisiones (longitud igual a la cantidad de batches)
+    precisions = Vector{Float64}(undef, length(batches))
 
+    # Bucle para iterar sobre los batches
     for i in 1:length(batches)
+        # Predecir con el modelo actual en el i-ésimo batch y calcular la precisión
+        predictions = predict(svm, batchInputs(batches[i]))
+        precisions[i] = mean(predictions .== batchTargets(batches[i]))
 
-        #Hacer test del modelo actual (función predict de Scikit-Learn) con el i-ésimo batch, calcular la precisión y almacenarla en el vector
-        vector_precisiones[i] = predict(svm, batches[i])
+        # Actualizar la memoria con el i-ésimo batch
+        memory = addBatch!(memory, batches[i])
 
-        #Actualizar la memoria con el i-ésimo batch mediante la función addBatch!
-        addBatch!(memoria, batches[i]) 
-
-        #Entrenar un nuevo SVM con la memoria actualizada que se tiene. Este será el nuevo modelo
-        svm = trainSVM(memoria, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
-
+        # Entrenar un nuevo SVM con la memoria actualizada
+        svm, supportVectors, _ = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
     end
-    
-    return vector_precisiones
 
+    # Devolver el vector de precisiones
+    return precisions
 end;
 
 #vamos a probar la función
 
-datasetFolder = "datasets"
-windowSize = 100
-batchSize = 50
-kernel = "rbf"
-C = 1.0
+# datasetFolder = "datasets"
+# windowSize = 100
+# batchSize = 50
+# C = 1.0
 
-precisiones = streamLearning_SVM(datasetFolder, windowSize, batchSize, kernel, C)
+# streamLearning_SVM(datasetFolder, windowSize, batchSize, kernel, C)
 
 
 function streamLearning_ISVM(datasetFolder::String, windowSize::Int, batchSize::Int, kernel::String, C::Real;
     degree::Real=1, gamma::Real=2, coef0::Real=0.)
 
-    # Inicializar memoria y batches
-    memoria, batches = initializeStreamLearningData(datasetFolder, batchSize, batchSize)
+    # Inicializar memoria y batches usando initializeStreamLearningData
+    memory, batches = initializeStreamLearningData(datasetFolder, batchSize, batchSize)
 
-    # Entrenar el primer SVM
-    svm, supportVectors, indicesSupportVectorsInFirstBatch = trainSVM(memoria, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+    # Entrenar el primer SVM con la memoria inicial
+    svm, supportVectors, indicesSupportVectorsInFirstBatch = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
 
-    # Crear vector de edades
-    vector_edades = batchSize:-1:1
-    vector_edades_support = vector_edades[indicesSupportVectorsInFirstBatch]
+    # Crear un vector con la edad de los patrones
+    patternAges = collect(batchSize:-1:1)
+    supportVectorAges = patternAges[indicesSupportVectorsInFirstBatch[1]]
 
-    # Crear vector de precisiones
-    vector_precisiones = Vector{Float64}(undef, length(batches))
+    # Crear un vector para almacenar las precisiones (longitud igual a la cantidad de batches)
+    precisions = Vector{Float64}(undef, length(batches))
 
-    # Bucle de entrenamiento incremental
+    # Bucle para iterar sobre los batches
     for i in 1:length(batches)
+        # Predecir con el modelo actual en el i-ésimo batch y calcular la precisión
+        predictions = predict(svm, batchInputs(batches[i]))
+        precisions[i] = mean(predictions .== batchTargets(batches[i]))
 
-        #Hacer test del modelo actual con el i-ésimo batch
-        vector_precisiones[i] = predict(svm, batches[i])
+        # Actualizar el vector de edad de los vectores de soporte
+        supportVectorAges .+= batchSize
 
-        #Actualizar el vector de edad de los vectores de soporte
-        vector_edades_support += size(batches[i].inputs, 1) 
+        # Seleccionar vectores de soporte cuya edad es <= windowSize
+        validIndices = findall(x -> x <= windowSize, supportVectorAges)
+        supportVectors = selectInstances(supportVectors, validIndices)
+        supportVectorAges = supportVectorAges[validIndices]
 
-        #Seleccionar vectores de soporte con edad menor o igual a windowSize
-        indices_support = findall(vector_edades_support .<= windowSize)
+        # Entrenar un nuevo SVM con el nuevo batch y los vectores de soporte
+        svm, newSupportVectors, (indicesOldSupportVectors, indicesNewTrainingData) = trainSVM(batches[i], kernel, C, degree=degree, gamma=gamma, coef0=coef0, supportVectors=supportVectors)
 
-        #Seleccionar instancias de los vectores de soporte
-        nuevos_support = selectInstances(supportVectors, indices_support)
+        # Crear un nuevo lote de datos con los nuevos vectores de soporte
+        newSupportVectorsBatch = joinBatches(
+            selectInstances(supportVectors, indicesOldSupportVectors),
+            selectInstances(batches[i], indicesNewTrainingData)
+        )
 
-        #Seleccionar instancias del batch
-        nuevos_batch = selectInstances(batches[i], indicesSupportVectorsInFirstBatch)
+        # Crear el vector de edades de los nuevos vectores de soporte
+        newSupportVectorAges = vcat(
+            supportVectorAges[indicesOldSupportVectors],
+            patternAges[indicesNewTrainingData]
+        )
 
-        #Entrenar un nuevo SVM
-        svm, nuevos_support, nuevos_indicesSupportVectorsInFirstBatch = trainSVM(nuevos_support, nuevos_batch, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
-
-        #Crear un nuevo lote de datos con los nuevos vectores de soporte
-        nuevos_support = joinBatches(nuevos_support, nuevos_batch)
-
-        #Crear el vector de edades de los nuevos vectores de soporte
-        nuevos_edades_support = vcat(vector_edades_support[indices_support], batchSize:-1:1)
-
-        #Actualizar vectores de soporte y edades
-        supportVectors = nuevos_support
-        vector_edades_support = nuevos_edades_support
-
+        # Actualizar los vectores de soporte y sus edades
+        supportVectors = newSupportVectorsBatch
+        supportVectorAges = newSupportVectorAges
     end
 
-    return vector_precisiones
+    # Devolver el vector de precisiones
+    return precisions
+end;
 
-end
+   
 
 #vamos a probar la función con un ejemplo
 
-datasetFolder = "datasets/"
-windowSize = 100
-batchSize = 50
-kernel = "rbf"
-C = 1.0
+# datasetFolder = "datasets/"
+# windowSize = 100
+# batchSize = 50
+# kernel = "rbf"
+# C = 1.0
 
 # streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
 
+
 function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
 
-    return sqrt.(sum((memory.inputs .- instance').^2, dims=2))
+    return sqrt.(sum((batchInputs(memory) .- instance').^2, dims=2))
     
 end;
+
+#vamos a probar la función
+
+# memory = selectInstances(hector_batch,1:10)
+# instance = batchInputs(hector_batch)[1,:]
+
+# euclideanDistances(memory, instance)
+
+
+using StatsBase #para usar la función mode
 
 function predictKNN(memory::Batch, instance::AbstractArray{<:Real,1}, k::Int)
 
     distances = euclideanDistances(memory, instance)
 
-    min_index = partialsortperm(distances, 1:k)
+    min_index = partialsortperm(vec(distances), 1:k)
 
-    return mode(memory.outputs[min_index])
+    return mode(memory[2][min_index])
 
 end;
+
+#vamos a probar la función
+
+# memory = selectInstances(hector_batch,1:10)
+# instance = batchInputs(hector_batch)[1,:]
+# k = 3
+
+#predictKNN(memory, instance, k)
 
 function predictKNN(memory::Batch, instances::AbstractArray{<:Real,2}, k::Int)
     return [predictKNN(memory, instance, k) for instance in eachrow(instances)]
 end;
 
+#vamos a probar la función
+
+# memory = selectInstances(hector_batch,1:10)
+# instances = batchInputs(hector_batch)[1:3,:]
+# k = 3
+
+# predictKNN(memory, instances, k)
+
+
 function streamLearning_KNN(datasetFolder::String, windowSize::Int, batchSize::Int, k::Int)
-    #
-    # Codigo a desarrollar
-    #
+    
+    # Inicializar memoria y batches usando initializeStreamLearningData
+    memory, batches = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
+
+    # Crear un vector para almacenar las precisiones (longitud igual a la cantidad de batches)
+    precisions = Vector{Float64}(undef, length(batches))
+
+    # Bucle para iterar sobre los batches
+    for i in 1:length(batches)
+        # Predecir con el modelo actual en el i-ésimo batch y calcular la precisión
+        predictions = predictKNN(memory, batchInputs(batches[i]), k)
+        precisions[i] = mean(predictions .== batchTargets(batches[i]))
+
+        # Actualizar la memoria con el i-ésimo batch
+        memory = addBatch!(memory, batches[i])
+    end
+
+    # Devolver el vector de precisiones
+    return precisions
+
 end;
 
+#vamos a probar la función
 
+# datasetFolder = "datasets"
+# windowSize = 100
+# batchSize = 50
+# k = 3
 
+# streamLearning_KNN(datasetFolder, windowSize, batchSize, k)
 
 # ----------------------------------------------------------------------------------------------
 # ------------------------------------- Ejercicio 6 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
+
 
 
 function predictKNN_SVM(dataset::Batch, instance::AbstractArray{<:Real,1}, k::Int, C::Real)
