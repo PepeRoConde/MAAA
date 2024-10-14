@@ -646,8 +646,9 @@ end
 # # Instalamos scikit-learn manualmente en el entorno de Conda
 # Conda.add("scikit-learn")
 
+# using ScikitLearn: @sk_import, fit!, predict
 # import ScikitLearn.svm as svm
-#@sk_import svm: SVC
+# @sk_import svm: SVC
 
 
 Batch = Tuple{AbstractArray{<:Real,2}, AbstractArray{<:Any,1}}
@@ -783,12 +784,12 @@ end;
 
 
 
-# ## Ejemplo de cómo llamar a la función
+## Ejemplo de cómo llamar a la función
 # datasetFolder = "datasets"
 # windowSize = 100  # Tamaño de la ventana inicial
 # batchSize = 50    # Tamaño de los batches
 
-#(memory,batches) = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
+# (memory,batches) = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
 
 function addBatch!(memory::Batch, newBatch::Batch)
         
@@ -804,6 +805,7 @@ function addBatch!(memory::Batch, newBatch::Batch)
     end;
 #print(addBatch!(memory, batches))
 
+
 # import Pkg; Pkg.add("ScikitLearn")
 using ScikitLearn: predict
 using ScikitLearn: fit!
@@ -815,7 +817,11 @@ function streamLearning_SVM(datasetFolder::String, windowSize::Int, batchSize::I
     memory, batches = initializeStreamLearningData(datasetFolder, windowSize, batchSize)
 
     # Entrenar el primer SVM con la memoria inicial
-    svm, supportVectors, _ = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+    svm, supportVectors, indicesSupportVectorsInFirstBatch = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+
+    # Crear un vector con la edad de los patrones
+    patternAges = collect(batchSize:-1:1)
+    supportVectorAges = patternAges[indicesSupportVectorsInFirstBatch[1]]
 
     # Crear un vector para almacenar las precisiones (longitud igual a la cantidad de batches)
     precisions = Vector{Float64}(undef, length(batches))
@@ -826,11 +832,32 @@ function streamLearning_SVM(datasetFolder::String, windowSize::Int, batchSize::I
         predictions = predict(svm, batchInputs(batches[i]))
         precisions[i] = mean(predictions .== batchTargets(batches[i]))
 
-        # Actualizar la memoria con el i-ésimo batch
-        memory = addBatch!(memory, batches[i])
+        # Actualizar el vector de edad de los vectores de soporte
+        supportVectorAges .+= batchSize
 
-        # Entrenar un nuevo SVM con la memoria actualizada
-        svm, supportVectors, _ = trainSVM(memory, kernel, C, degree=degree, gamma=gamma, coef0=coef0)
+        # Seleccionar vectores de soporte cuya edad es <= windowSize
+        validIndices = findall(x -> x <= windowSize, supportVectorAges)
+        supportVectors = selectInstances(supportVectors, validIndices)
+        supportVectorAges = supportVectorAges[validIndices]
+
+        # Entrenar un nuevo SVM con el nuevo batch y los vectores de soporte
+        svm, newSupportVectors, (indicesOldSupportVectors, indicesNewTrainingData) = trainSVM(batches[i], kernel, C, degree=degree, gamma=gamma, coef0=coef0, supportVectors=supportVectors)
+
+        # Crear un nuevo lote de datos con los nuevos vectores de soporte
+        newSupportVectorsBatch = joinBatches(
+            selectInstances(supportVectors, indicesOldSupportVectors),
+            selectInstances(batches[i], indicesNewTrainingData)
+        )
+
+        # Crear el vector de edades de los nuevos vectores de soporte
+        newSupportVectorAges = vcat(
+            supportVectorAges[indicesOldSupportVectors],
+            patternAges[indicesNewTrainingData]
+        )
+
+        # Actualizar los vectores de soporte y sus edades
+        supportVectors = newSupportVectorsBatch
+        supportVectorAges = newSupportVectorAges
     end
 
     # Devolver el vector de precisiones
@@ -843,6 +870,7 @@ end;
 # windowSize = 100
 # batchSize = 50
 # C = 1.0
+# kernel="rbf"
 
 # streamLearning_SVM(datasetFolder, windowSize, batchSize, kernel, C)
 
@@ -913,10 +941,9 @@ end;
 
 # streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
 
-
 function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
-
-    return sqrt.(sum((batchInputs(memory) .- instance').^2, dims=2))
+    # Calcular la distancia euclidiana entre la instancia y todas las instancias en la memoria, y cambiar el resultado al tipo AbstractArray{<:Real}
+     return AbstractArray{Real}(sqrt.(sum((batchInputs(memory) .- instance').^2, dims=2)))
     
 end;
 
@@ -926,6 +953,8 @@ end;
 # instance = batchInputs(hector_batch)[1,:]
 
 # euclideanDistances(memory, instance)
+
+
 
 
 using StatsBase #para usar la función mode
@@ -997,17 +1026,48 @@ end;
 # ------------------------------------- Ejercicio 6 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
-
-
 function predictKNN_SVM(dataset::Batch, instance::AbstractArray{<:Real,1}, k::Int, C::Real)
-    #
-    # Codigo a desarrollar
-    #
+    
+    distances = euclideanDistances(dataset, instance)
+    
+    minIndices = partialsortperm(vec(distances), 1:k)
+    
+    uniqueTargets = unique(batchTargets(selectInstances(dataset, minIndices)))
+    
+    if length(uniqueTargets) == 1
+        return uniqueTargets[1]
+    end
+
+    model = SVC(kernel="linear", C=C, random_state=1)
+    fit!(model, batchInputs(selectInstances(dataset, minIndices)), batchTargets(selectInstances(dataset, minIndices)))
+    
+    prediction = predict(model, reshape(instance, 1, :))[1]
+    
+    return prediction
+
 end;
+
+#vamos a probar la función
+
+# dataset = selectInstances(hector_batch,1:10)
+# instance = batchInputs(hector_batch)[1,:]
+# k = 3
+# C = 1.0
+
+# predictKNN_SVM(dataset, instance, k, C)
+
 
 function predictKNN_SVM(dataset::Batch, instances::AbstractArray{<:Real,2}, k::Int, C::Real)
-    #
-    # Codigo a desarrollar
-    #
-end;
+   
+    return [predictKNN_SVM(dataset, instance, k, C) for instance in eachrow(instances)]
 
+end
+
+#vamos a probar la función
+
+# dataset = selectInstances(hector_batch,1:10)
+# instances = batchInputs(hector_batch)[1:3,:]
+# k = 3
+# C = 1.0
+
+# predictKNN_SVM(dataset, instances, k, C)
