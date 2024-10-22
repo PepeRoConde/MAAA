@@ -4,7 +4,8 @@
 # ------------------------------------- Ejercicio 1 --------------------------------------------
 # ----------------------------------------------------------------------------------------------
 
-using FileIO, Images, JLD2, DelimitedFiles, Flux
+using FileIO, Images, JLD2, DelimitedFiles, Flux, StatsBase
+
 
 
 function fileNamesFolder(folderName::String, extension::String)
@@ -919,6 +920,7 @@ end;
 
    
 
+# import Pkg; Pkg.add("StatsBase")
 #vamos a probar la función con un ejemplo
 
 # datasetFolder = "datasets/"
@@ -931,7 +933,7 @@ end;
 
 function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
     # Calcular la distancia euclidiana entre la instancia y todas las instancias en la memoria, y cambiar el resultado al tipo AbstractArray{<:Real}
-     return AbstractArray{Real}(sqrt.(sum((batchInputs(memory) .- instance').^2, dims=2)))
+     return AbstractVector{<:Real}(sqrt.(sum((batchInputs(memory) .- instance').^2, dims=2)))
     
 end;
 
