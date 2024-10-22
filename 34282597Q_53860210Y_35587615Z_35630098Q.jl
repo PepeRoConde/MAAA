@@ -651,7 +651,7 @@ end
 # import ScikitLearn.svm as svm
 # @sk_import svm: SVC
 
-# # Otras cosas extrañas
+# Otras cosas extrañas
 # ENV["PYTHON"] = ""
 # Pkg.build("PyCall")  
 # using Conda
@@ -938,13 +938,13 @@ function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
 end;
 
 #vamos a probar la función
-lote_entero_lepiota = Tuple(loadDataset("agaricus-lepiota", "datasets"))
-hector_batch = Batch(lote_entero_lepiota)
+# lote_entero_lepiota = Tuple(loadDataset("agaricus-lepiota", "datasets"))
+# hector_batch = Batch(lote_entero_lepiota)
 
-memory = selectInstances(hector_batch,1:10)
-instance = batchInputs(hector_batch)[1,:]
+# memory = selectInstances(hector_batch,1:10)
+# instance = batchInputs(hector_batch)[1,:]
 
-euclideanDistances(memory, instance)
+# euclideanDistances(memory, instance)
 
 
 
