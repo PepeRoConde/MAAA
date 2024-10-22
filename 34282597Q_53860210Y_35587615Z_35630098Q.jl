@@ -923,13 +923,13 @@ end;
 # import Pkg; Pkg.add("StatsBase")
 #vamos a probar la función con un ejemplo
 
-datasetFolder = "datasets/"
-windowSize = 100
-batchSize = 50
-kernel = "rbf"
-C = 1.0
+# datasetFolder = "datasets/"
+# windowSize = 100
+# batchSize = 50
+# kernel = "rbf"
+# C = 1.0
 
-streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
+# streamLearning_ISVM(datasetFolder, windowSize, batchSize, kernel, C)
 
 function euclideanDistances(memory::Batch, instance::AbstractArray{<:Real,1})
     # Calcular la distancia euclidiana entre la instancia y todas las instancias en la memoria, y cambiar el resultado al tipo AbstractArray{<:Real}
