@@ -1,3 +1,13 @@
+import Pkg
+Pkg.add("CSV")
+Pkg.add("DataFrames")
+Pkg.add("Statistics")
+Pkg.add("StatsBase")
+Pkg.add("Random")
+Pkg.add("ScikitLearn")
+Pkg.add("Plots")
+Pkg.add("MLBase")
+
 using CSV
 using DataFrames
 using Plots
@@ -100,9 +110,16 @@ X_test = fit_transform!(MinMaxScaler(), X_test);
 #################################################
 
 function  buenosDias(df)
-    indice = argmax(df[!,Symbol("Accuracy")])
-    return df[indice,:]
+    clasificadores = unique(df[!,:clasificador])
+    println("MEJORES RESULTADOS POR CLASIFICADOR:")
+    for nombreClasificador in clasificadores
+        df_clasificador = filter(fila -> fila.clasificador == nombreClasificador, df)
+        #println(df_clasificador)
+        indice = argmax(df_clasificador[!,Symbol("Accuracy")])
+        println(Array(df_clasificador[indice,:]))
+    end
 end
+
 
 resultadosModelosBasicos = DataFrame(filtrado = String[], reduccion = String[], clasificador = String[], Accuracy = Float64[])
 plot_distribucion = @layout [a b c; d e]
@@ -171,6 +188,7 @@ buenosDias(resultadosModelosBasicos)
 # 10
 #####
 
+
 resultadosEjercicio10 = DataFrame(clasificador = String[],  Accuracy = Float64[])
 
 clasificadoresEjercicio10 = Dict(
@@ -179,20 +197,18 @@ clasificadoresEjercicio10 = Dict(
     "adaboosting" => AdaBoostClassifier(estimator=SVC(kernel="linear"), algorithm="SAMME", n_estimators=5),
     "gbm" => GradientBoostingClassifier(learning_rate=0.2, n_estimators=50)
     )
-for (i, fold) in enumerate(folds)
-    println("Fold número $i\n##########\n")
-    for (nombreClasificador, clasificador) in clasificadoresEjercicio10
-        modelo = Pipeline([
-            ("filtro", SelectKBest(score_func=f_classif)),
-            ("classifier", clasificador)
-        ])
-    
-        fit!(modelo, fold[1][1], fold[1][2])
-        Y_pred = predict(modelo, fold[2][1])
-        accuracy = sum(Y_pred .== fold[2][2]) / length(fold[2][1])
-        push!(resultadosEjercicio10, (nombreClasificador, accuracy))
-        println("Clasificador: $nombreClasificador Precisión: $accuracy")
-    end
+
+for (nombreClasificador, clasificador) in clasificadoresEjercicio10
+    modelo = Pipeline([
+        ("filtro", SelectKBest(score_func=f_classif)),
+        ("classifier", clasificador)
+    ])
+
+    fit!(modelo, X_train, Y_train)
+    Y_pred = predict(modelo, X_test)
+    accuracy = sum(Y_pred .== Y_test) / length(Y_test)
+    push!(resultadosEjercicio10, (nombreClasificador, accuracy))
+    println("Clasificador: $nombreClasificador Precisión: $accuracy")
 end
 
 buenosDias(resultadosEjercicio10)
